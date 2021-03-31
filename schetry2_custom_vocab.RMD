@@ -1,0 +1,75 @@
+---
+title: "schetry2_custom_vocab"
+author: "Saurav Prem Kaushik Chetry"
+date: "11/19/2020"
+output: html_document
+---
+
+
+# Custom Vocab generation process:  
+
+For full credit, the objective was to use a vocabulary size <= 1000 terms while consistently achieving AUC > 0.96 over all the five test-train splits using the same custom vocab list.
+
+I tried creating vocab using the training data in split 1 and could achieve AUC for all splits > 0.96. However for split 1, the AUC was 0.9601, just barely above the required benchmark. I therefore started checking for other methods for better results. Conclusively, I used the whole data( train + test) to create my final vocab list which contained unique terms of 982 rows.  
+
+As shared in Piazza post "What we have tried(I)", I used the R package 'text2vec' to construct DT (DocumentTerm) matrix (maximum 4-grams). The default vocabulary size (i.e., # of columns of dtm_train) is 50,000, bigger than the sample size n = 25,000. n-grams up to 4-grams were generated from each of the review text using the create_vocabulary function from text2vec package. The prune_vocabulary function from text2vec package was used to remove any terms lower than 10 counts,keeping terms with 99.9% to 50.0% of document frequency.Initial set of custom vocabulary was used to create the document-term matrix using function create_dtm.
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+# Load necessary packages:
+
+mypackages = c("pROC", "text2vec", "glmnet")   # required packages
+tmp = setdiff(mypackages, rownames(installed.packages()))  # packages need to be installed
+if (length(tmp) > 0) install.packages(tmp)
+lapply(mypackages, require, character.only = TRUE)
+
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+set.seed(4726)
+
+# Generating custom vocab list on the whole data set.
+
+train_all = read.table("alldata.tsv",
+                   stringsAsFactors = FALSE,
+                   header = TRUE)
+train_all$review = gsub('<.*?>', ' ', train_all$review)
+
+stop_words = c("i", "me", "my", "myself",
+               "we", "our", "ours", "ourselves",
+               "you", "your", "yours",
+               "their", "they", "his", "her",
+               "she", "he", "a", "an", "and",
+               "is", "was", "are", "were",
+               "him", "himself", "has", "have",
+               "it", "its", "the", "us")
+it_train = itoken(train_all$review,
+                  preprocessor = tolower,
+                  tokenizer = word_tokenizer)
+tmp.vocab = create_vocabulary(it_train,
+                              stopwords = stop_words,
+                              ngram = c(1L,4L))
+tmp.vocab = prune_vocabulary(tmp.vocab, term_count_min = 10,
+                             doc_proportion_max = 0.5,
+                             doc_proportion_min = 0.001)
+dtm_train  = create_dtm(it_train, vocab_vectorizer(tmp.vocab))
+
+```
+
+As Lasso zeros out any terms that are not contributing to the prediction, while preserving the non-zero coeff terms useful for prediction, the glmnet package was used to fit a logistic regression with L1 (lasso) penalty to build a custom bag of n-grams after pruning the entire set of review texts and then trimming the vocabulary size to under 1K. The glmnet output "tmpfit" contained 91 sets of estimated beta values corresponding to 91 different lambda values. In particular, "tmpfit$df" tells us the number of non-zero beta values (i.e., df) for each of the 91 estimates. I picked the largest df among those less than 1K (which turns out to be the 36th column), and store the corresponding words in "myvocab". 
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+tmpfit = glmnet(x = dtm_train,
+                y = train_all$sentiment,
+                alpha = 1,
+                family='binomial')
+tmpfit$df
+```
+
+
+```{r echo=TRUE}
+myvocab = colnames(dtm_train)[which(tmpfit$beta[, 36] != 0)]
+
+length(myvocab)
+```
