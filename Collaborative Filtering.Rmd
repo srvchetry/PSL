@@ -1,0 +1,352 @@
+---
+title: "Collaborative Filtering"
+author: "Saurav Prem Kaushik Chetry"
+date: "12/5/2020"
+output: html_document
+---
+```{r include=FALSE}
+#load libraries
+set.seed(4726)
+mypackages = c("dplyr", "ggplot2", "recommenderlab","reshape2","Matrix","DT","data.table","tidyr","stringr","knitr","methods","corrplot","qgraph")   # required packages
+tmp = setdiff(mypackages, rownames(installed.packages()))  # packages need to be installed
+if (length(tmp) > 0) install.packages(tmp)
+lapply(mypackages, require, character.only = TRUE)
+```
+
+
+```{r}
+myurl = "https://liangfgithub.github.io/MovieData/"
+```
+
+```{r}
+ratings = read.csv(paste0(myurl, 'ratings.dat?raw=true'), 
+                   sep = ':',
+                   colClasses = c('integer', 'NULL'), 
+                   header = FALSE)
+colnames(ratings) = c('UserID', 'MovieID', 'Rating', 'Timestamp')
+nrow(ratings)
+```
+
+```{r}
+movies = readLines(paste0(myurl, 'movies.dat?raw=true'))
+movies = strsplit(movies, split = "::", fixed = TRUE, useBytes = TRUE)
+movies = matrix(unlist(movies), ncol = 3, byrow = TRUE)
+movies = data.frame(movies, stringsAsFactors = FALSE)
+colnames(movies) = c('MovieID', 'Title', 'Genres')
+movies$MovieID = as.integer(movies$MovieID)
+
+# convert accented characters
+movies$Title[73]
+movies$Title = iconv(movies$Title, "latin1", "UTF-8")
+movies$Title[73]
+
+# extract year
+movies$Year = as.numeric(unlist(
+  lapply(movies$Title, function(x) substr(x, nchar(x)-4, nchar(x)-1))))
+#length(unique(movies$MovieID))
+```
+
+```{r}
+users = read.csv(paste0(myurl, 'users.dat?raw=true'),
+                 sep = ':', header = FALSE)
+users = users[, -c(2,4,6,8)] # skip columns
+colnames(users) = c('UserID', 'Gender', 'Age', 'Occupation', 'Zip-code')
+nrow(users)
+```
+```{r}
+# highest rated movies by genre
+
+hr.genre = ratings %>%
+  group_by(MovieID) %>%
+  summarize(ratings_per_movie = n(),
+            ave_ratings = round(mean(Rating), dig = 3)) %>%
+  inner_join(movies, by = 'MovieID') %>%
+  filter(ratings_per_movie > 200) %>%
+  filter(grepl("Documentary", Genres)) %>%
+  top_n(10, ave_ratings) %>% # select top 10 highest average rated movies for the selected genre. ###### Approach 1
+  select('MovieID',
+         'Title',
+         'ave_ratings',
+         'ratings_per_movie',
+         'Genres') %>%
+  arrange(desc(ave_ratings))
+
+hr.genre
+```
+
+```{r}
+#most rating users, those who have more ratings than 
+
+mr.users = ratings %>% 
+  group_by(UserID) %>% 
+  summarize(number_of_ratings_per_user = n()) %>%
+  filter(number_of_ratings_per_user > 50) 
+
+selected.movies = ratings %>% 
+  group_by(UserID) %>%
+  inner_join(mr.users, by = 'UserID')
+
+
+hr.genre = selected.movies %>%
+  group_by(MovieID) %>%
+  summarize(ratings_per_movie = n(),
+            ave_ratings = round(mean(Rating), dig = 3)) %>%
+  inner_join(movies, by = 'MovieID') %>%
+  filter(ratings_per_movie > 200) %>%
+  filter(grepl("Film-Noir", Genres)) %>%
+  top_n(10, ave_ratings) %>% # select top 10 highest average rated movies for the selected genre. ###### Approach 1
+  select('MovieID',
+         'Title',
+         'ave_ratings',
+         'ratings_per_movie',
+         'Genres') %>%
+  arrange(desc(ave_ratings))
+
+hr.genre
+
+```
+
+
+
+```{r}
+dimension_names <- list(UserID = sort(unique(ratings$UserID)), MovieID = sort(unique(ratings$MovieID)))
+ratingmat <- spread(select(ratings, MovieID, UserID, Rating), MovieID, Rating) %>% select(-UserID)
+
+ratingmat <- as.matrix(ratingmat)
+dimnames(ratingmat) <- dimension_names
+#ratingmat[1:15, 1:15]
+dim(ratingmat)
+```
+
+## Step 1: Find similar users
+```{r}
+current_user <- "121"
+rated_items <- which(!is.na((as.data.frame(ratingmat[current_user, ]))))
+selected_users <- names(which(apply(!is.na(ratingmat[ ,rated_items]), 1, sum) >= 2))
+head(selected_users, 40)
+```
+
+```{r}
+rmat <- ratingmat[selected_users, ]
+user_mean_ratings <- rowMeans(rmat,na.rm=T)
+rmat <- rmat - user_mean_ratings
+```
+
+```{r}
+similarities <- cor(t(rmat[rownames(rmat)!=current_user, ]), rmat[current_user, ], use = 'pairwise.complete.obs')
+sim <- as.vector(similarities)
+names(sim) <- rownames(similarities)
+res <- sort(sim, decreasing = TRUE)
+head(res, 40)
+```
+
+```{r}
+sim_mat <- cor(t(rmat), use = 'pairwise.complete.obs')
+random_users <- selected_users[1:20]
+qgraph(sim_mat[c(current_user, random_users), c(current_user, random_users)], layout = "spring", vsize = 5, theme = "TeamFortress", labels = c(current_user, random_users))
+```
+
+```{r}
+
+similar_users <- names(res[1:4])
+
+similar_users_ratings <- data.frame(item = rep(colnames(rmat), length(similar_users)), rating = c(t(as.data.frame(rmat[similar_users,])))) %>% filter(!is.na(rating))
+
+current_user_ratings <- data.frame(item = colnames(rmat), rating = rmat[current_user,]) %>% filter(!is.na(rating))
+
+predictions <- similar_users_ratings %>% 
+  filter(!(item %in% current_user_ratings$item)) %>% 
+  group_by(item) %>% summarize(mean_rating = mean(rating))
+
+predictions %>% 
+    datatable(class = "nowrap hover row-border", options = list(dom = 't',scrollX = TRUE, autoWidth = TRUE))
+
+```
+
+```{r}
+predictions %>% 
+  arrange(-mean_rating) %>% 
+  top_n(5, wt = mean_rating) %>% 
+  mutate(MovieID = as.numeric(as.character(item))) %>% 
+  left_join(select(movies,Title,Genres, MovieID), by = "MovieID") %>% 
+  select(-item) %>% 
+  datatable(class = "nowrap hover row-border", options = list(dom = 't',scrollX = TRUE, autoWidth = TRUE))
+```
+## Using Recommendarlab
+
+
+```{r}
+ratingmat0 <- ratingmat
+ratingmat0[is.na(ratingmat0)] <- 0
+sparse_ratings <- as(ratingmat0, "sparseMatrix")
+rm(ratingmat0)
+gc()
+
+```
+
+```{r}
+real_ratings <- new("realRatingMatrix", data = sparse_ratings)
+real_ratings
+```
+
+```{r}
+model <- Recommender(real_ratings, method = "POPULAR", parameter = list(normalize = 'Z-score'))
+#rec = Recommender(rmat, method = 'POPULAR', parameter = list(normalize = 'Z-score'))
+```
+
+```{r}
+#prediction <- predict(model, real_ratings[current_user, ], type = "ratings")
+res = predict(model, real_ratings, type = 'ratings') 
+
+rec_list = as(res, 'list')
+
+# sort, organize, and return the results
+user_results <- sort(rec_list[[1]], decreasing = TRUE)[1:20]
+user_predicted_ids <- as.numeric(names(user_results))
+recom_results <- data.table(Rank = 1:20, 
+                            MovieID = user_predicted_ids, 
+                            Title = movies$Title[user_predicted_ids], 
+                            Predicted_rating =  user_results)
+
+```
+
+
+```{r}
+recom_results
+```
+
+```{r}
+as(prediction, 'data.frame') %>% 
+  arrange(-rating) %>% .[1:5,] %>% 
+  mutate(MovieID = as.numeric(as.character(item))) %>% 
+  left_join(select(movies,Title,Genres, MovieID), by = "MovieID") %>% 
+  select(-item) %>% 
+  datatable(class = "nowrap hover row-border", escape = FALSE, options = list(dom = 't',scrollX = TRUE, autoWidth = TRUE))
+```
+
+```{r}
+scheme <- evaluationScheme(real_ratings[1:500,], method = "cross-validation", k = 10, given = -1, goodRating = 5)
+```
+
+```{r}
+algorithms <- list("random" = list(name = "RANDOM", param = NULL),
+                   "popular"= list(name = "POPULAR", param = list(normalize = 'Z-score')),
+                   "UBCF_05" = list(name = "UBCF", param = list(normalize = 'Z-score', method = 'Cosine', nn = 5)),
+                   "UBCF_10" = list(name = "UBCF",param = list(normalize = 'Z-score', method = 'Cosine', nn = 10)),
+                   "UBCF_25" = list(name = "UBCF",param = list(normalize = 'Z-score', method = 'Cosine', nn = 25)),                   
+                   "UBCF_50" = list(name = "UBCF",param = list(normalize = 'Z-score', method = 'Cosine', nn = 50)))
+
+results <- evaluate(scheme, algorithms, type = "ratings")
+```
+
+```{r}
+# restructure results output
+tmp <- lapply(results, function(x) slot(x, "results"))
+res <- tmp %>% 
+  lapply(function(x) unlist(lapply(x, function(x) unlist(x@cm[ ,"RMSE"])))) %>% 
+  as.data.frame() %>% 
+  gather(key = "Algorithm", value = "RMSE")
+
+res %>% 
+  ggplot(aes(Algorithm, RMSE, fill = Algorithm)) +
+  geom_bar(stat = "summary") + geom_errorbar(stat = "summary", width = 0.3, size = 0.8) +
+  coord_cartesian(ylim = c(0.6, 1.3)) + guides(fill = FALSE)
+```
+```{r}
+recommenderRegistry$get_entry_names()
+```
+
+```{r}
+recommenderRegistry$get_entries(dataType = "realRatingMatrix")
+```
+```{r}
+scheme <- evaluationScheme(real_ratings[1:500,], method = "cross-validation", k = 10, given = -1, goodRating = 5)
+
+algorithms <- list("random" = list(name = "RANDOM", param = NULL),
+                   "popular" = list(name = "POPULAR"),
+                   "UBCF" = list(name = "UBCF"),
+                   "SVD" = list(name = "SVD"),
+                   "IBCF"= list(name = "IBCF")
+                   )
+                   
+results <- evaluate(scheme, algorithms, type = "ratings", progress = FALSE)
+```
+
+```{r}
+# restructure results output
+tmp <- lapply(results, function(x) slot(x, "results"))
+res <- tmp %>% 
+  lapply(function(x) unlist(lapply(x, function(x) unlist(x@cm[ ,"RMSE"])))) %>% 
+  as.data.frame() %>% 
+  gather(key = "Algorithm", value = "RMSE")
+
+res %>% 
+  mutate(Algorithm=factor(Algorithm, levels = c("random", "popular", "UBCF", "SVD","IBCF"))) %>%
+  ggplot(aes(Algorithm, RMSE, fill = Algorithm)) + geom_bar(stat = "summary") + 
+  geom_errorbar(stat = "summary", width = 0.3, size = 0.8) + coord_cartesian(ylim = c(0.6, 1.3)) + 
+  guides(fill = FALSE)
+```
+
+
+## Shiny App
+
+```{r}
+ratingmat <- sparseMatrix(ratings$MovieID, ratings$UserID, x = ratings$Rating) # book x user matrix
+ratingmat <- ratingmat[,unique(summary(ratingmat)$j)] # remove unselected users
+dim(ratingmat)
+dimnames(ratingmat) <- list(MovieID = as.character(1:3952), 
+                            UserID = as.character(1:6040))
+```
+
+```{r}
+source('functions/cf_algorithm.R')
+source('functions/similarity_measures.R')
+
+# get the user ratings
+dat <- subset(ratings,UserID == current_user) # these should later be input by the user
+
+# add the user ratings to the existing rating matrix
+user_ratings <- sparseMatrix(i = dat$MovieID, 
+                             j = rep(1, nrow(dat)),
+                             x = dat$Rating, 
+                             dims = c(nrow(ratingmat), 1), 
+                             dimnames = list(rownames(ratingmat), as.character(current_user)))
+rmat <- cbind(user_ratings, ratingmat[, colnames(ratingmat) != current_user])
+
+# get the indices of which cells in the matrix should be predicted
+# here I chose to predict all movies the current user has not yet rated
+items_to_predict <- setdiff(1:nrow(rmat), dat$book_id)
+users <- 1
+prediction_indices <- as.matrix(expand.grid(items_to_predict, users))
+
+# run the cf-alogrithm
+#res <- predict_cf(rmat, prediction_indices, "ubcf", TRUE, cal_cor, 4, FALSE, 2000, 1000)
+
+res <- predict(model, real_ratings[current_user, ], type = "ratings")
+# sort and organize the results
+user_results <- sort(res[, users], decreasing = TRUE)
+user_predicted_ids <- as.numeric(names(user_results))
+user_results <- data.table(MovieID = user_predicted_ids, 
+                           Genre = movies$Genres[user_predicted_ids], 
+                           Title = movies$Title[user_predicted_ids], 
+                           Predicted_rating = user_results)
+
+user_results %>% 
+    datatable(class = "nowrap hover row-border", options = list(dom = 'tp', scrollX = TRUE, autoWidth = TRUE))
+```
+
+
+```{r}
+testdat <- real_ratings[rownames(real_ratings) != current_user, ]
+start <- Sys.time()
+model <- Recommender(testdat, method = "UBCF", param = list(method = "pearson", nn = 25))
+prediction <- predict(model, real_ratings[current_user, ], type = "ratings")
+cat('recommderlab ubcf: ', Sys.time() - start)
+```
+
+```{r}
+start <- Sys.time()
+res <- predict_cf(rmat, prediction_indices, "ubcf", TRUE, cal_cor, 4, FALSE, 2000, 1000)
+cat('optimized ubcf: ', Sys.time() - start)
+```
+

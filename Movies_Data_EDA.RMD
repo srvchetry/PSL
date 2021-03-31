@@ -1,0 +1,202 @@
+---
+title: "Movies_Data_EDA"
+author: "Saurav Prem Kaushik Chetry"
+date: "12/1/2020"
+output: html_document
+---
+```{r}
+set.seed(4726)
+mypackages = c("dplyr", "ggplot2", "recommenderlab","reshape2","Matrix","DT","data.table","tidyr","stringr","knitr","methods","corrplot")   # required packages
+tmp = setdiff(mypackages, rownames(installed.packages()))  # packages need to be installed
+if (length(tmp) > 0) install.packages(tmp)
+lapply(mypackages, require, character.only = TRUE)
+```
+
+```{r}
+myurl = "https://liangfgithub.github.io/MovieData/"
+```
+
+
+
+```{r}
+#ratings
+
+# use colClasses = 'NULL' to skip columns
+ratings = read.csv(paste0(myurl, 'ratings.dat?raw=true'), 
+                   sep = ':',
+                   colClasses = c('integer', 'NULL'), 
+                   header = FALSE)
+colnames(ratings) = c('UserID', 'MovieID', 'Rating', 'Timestamp')
+ratings
+```
+
+```{r}
+#duplicate reviews by same user for same movie
+
+ratings %>% group_by(UserID, MovieID) %>% mutate(n=n()) %>% filter(n>1)
+```
+```{r}
+
+```
+
+```{r}
+movies = readLines(paste0(myurl, 'movies.dat?raw=true'))
+movies = strsplit(movies, split = "::", fixed = TRUE, useBytes = TRUE)
+movies = matrix(unlist(movies), ncol = 3, byrow = TRUE)
+movies = data.frame(movies, stringsAsFactors = FALSE)
+colnames(movies) = c('MovieID', 'Title', 'Genres')
+movies$MovieID = as.integer(movies$MovieID)
+
+# convert accented characters
+movies$Title[73]
+movies$Title = iconv(movies$Title, "latin1", "UTF-8")
+movies$Title[73]
+
+# extract year
+movies$Year = as.numeric(unlist(
+  lapply(movies$Title, function(x) substr(x, nchar(x)-4, nchar(x)-1))))
+movies
+```
+
+```{r}
+small_image_url = "https://liangfgithub.github.io/MovieImages/"
+ratings %>% 
+  group_by(MovieID) %>% 
+  summarise(ratings_per_movie = n(), 
+            ave_ratings = round(mean(Rating), dig=3)) %>%
+  inner_join(movies, by = 'MovieID') %>%
+  filter(ratings_per_movie > 1000) %>%
+  top_n(10, ave_ratings) %>%
+  mutate(Image = paste0('<img src="', 
+                        small_image_url, 
+                        MovieID, 
+                        '.jpg?raw=true"></img>')) %>%
+  select('Image', 'Title', 'ave_ratings') %>%
+  arrange(desc(-ave_ratings)) %>%
+  datatable(class = "nowrap hover row-border", 
+            escape = FALSE, 
+            options = list(dom = 't',
+                          scrollX = TRUE, autoWidth = TRUE))
+```
+
+```{r}
+#genres
+
+genres = as.data.frame(movies$Genres, stringsAsFactors=FALSE)
+tmp = as.data.frame(tstrsplit(genres[,1], '[|]',
+                              type.convert=TRUE),
+                    stringsAsFactors=FALSE)
+genre_list = c("Action", "Adventure", "Animation", 
+               "Children's", "Comedy", "Crime",
+               "Documentary", "Drama", "Fantasy",
+               "Film-Noir", "Horror", "Musical", 
+               "Mystery", "Romance", "Sci-Fi", 
+               "Thriller", "War", "Western")
+m = length(genre_list)
+genre_matrix = matrix(0, nrow(movies), length(genre_list))
+for(i in 1:nrow(tmp)){
+  genre_matrix[i,genre_list %in% tmp[i,]]=1
+}
+colnames(genre_matrix) = genre_list
+remove("tmp", "genres")
+```
+
+
+```{r}
+
+# top genres based on number of movies in each genre.
+
+data.frame(Genres = genre_list, 
+                 Freq = as.vector(colMeans(genre_matrix))) %>% 
+  ggplot(aes(reorder(Genres, Freq), Freq, fill = Freq)) + 
+  geom_bar(stat = "identity") + 
+    geom_text(aes(label = round(Freq, dig=2)), 
+            position = position_stack(vjust = 0.5), 
+            color="white", size=3) + 
+  coord_flip() + 
+  scale_colour_brewer(palette="Set1") + 
+  labs(y = 'Frequency', x = 'Genre')
+```
+
+```{r}
+#top genres based on user ratings
+
+tmp = ratings %>% 
+  left_join(data.frame(MovieID = movies$MovieID, genre_matrix), 
+            by = "MovieID") %>%
+  select(-c("UserID", "MovieID", "Rating", "Timestamp"))
+data.frame(Genres = genre_list, 
+                 Popularity = as.vector(colMeans(tmp))) %>% 
+  ggplot(aes(reorder(Genres, Popularity), Popularity, fill = Popularity)) + 
+  geom_bar(stat = "identity") + 
+  geom_text(aes(label = round(Popularity, dig=3)), 
+            position = position_stack(vjust = 0.5), 
+            color="white", size=3) + 
+  coord_flip() + 
+  labs(y = 'Popularity', x = 'Genre')
+```
+
+```{r}
+tmp = ratings %>% 
+  group_by(UserID) %>% 
+  summarize(ratings_per_user = n()) 
+summary(tmp$ratings_per_user)
+stem(tmp$ratings_per_user)
+sum(tmp$ratings_per_user > 500)
+sum(tmp$ratings_per_user <3)
+sort(tmp$ratings_per_user[tmp$ratings_per_user>1300])
+
+```
+```{r}
+tmp %>%
+  ggplot(aes(ratings_per_user)) +
+  geom_bar(fill = "steelblue") + coord_cartesian(c(20, 500))
+```
+```{r}
+users = read.csv(paste0(myurl, 'users.dat?raw=true'),
+                 sep = ':', header = FALSE)
+users = users[, -c(2,4,6,8)] # skip columns
+colnames(users) = c('UserID', 'Gender', 'Age', 'Occupation', 'Zip-code')
+```
+
+```{r}
+tmp = tmp %>% full_join(users, by = 'UserID')
+tmp
+
+```
+```{r}
+plot(tmp$ratings_per_user, tmp$Age.x)
+```
+
+```{r}
+plot(tmp$ratings_per_user, tmp$Occupation.x)
+```
+
+```{r}
+plot(tmp$ratings_per_user, tmp$Gender.x == 'M')
+```
+```{r}
+tmp = ratings %>% 
+  group_by(MovieID) %>% 
+  summarize(ratings_per_movie = n(), ave_ratings = mean(Rating)) %>%
+  inner_join(movies, by = 'MovieID')
+summary(tmp$ratings_per_movie)
+```
+```{r}
+tmp %>% 
+  filter(ratings_per_movie > 2000) %>%
+  arrange(desc = ratings_per_movie) %>%
+  select(c("Title", "ratings_per_movie")) %>%
+  print(n = 31)
+```
+
+```{r}
+tmp %>% ggplot(aes(ratings_per_movie)) + 
+  geom_bar(fill = "steelblue", width = 1) + coord_cartesian(c(1,1500))
+```
+```{r}
+usermovie = inner_join(users,ratings, by = "UserID")
+bigtable = inner_join(usermovie,movies, by = "MovieID")
+names(bigtable)
+```
+
