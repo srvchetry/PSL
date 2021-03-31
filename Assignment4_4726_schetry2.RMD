@@ -1,0 +1,267 @@
+---
+title: "Assignment4_4726_schetry2"
+author: "Saurav Prem Kaushik Chetry"
+date: "10/19/2020"
+output: html_document
+---
+
+### Derivation
+
+Introduction: 
+
+A mixture model with two normal distributions is represented as 
+
+\begin{equation}
+f_{\theta}(x)=P_{1} N\left(x{;} \mu_{1}, \Sigma\right)+P_{2} N\left(x ; \mu_{2}, \Sigma_{1}\right)
+\end{equation}
+
+The parameters of this mixture model are:  
+
+\begin{equation}
+\theta=\left(P_{1}, P_{2}, \mu_{1}, \mu_{2}, \sum\right)
+\end{equation}
+
+P1,P2 are the mixing weights corresponding to the two components. mu1 and mu2 are the mean vectors for two distributions. Sigma is the common covariance matrix for the two distributions.
+
+In this assignment, we are to estimate these parameter values from the given data which is generated from a mixture model. The given data has associated latent variable values as follows. These are called latent variables as they are not always observed. 
+
+\begin{equation}
+\begin{array}{l}
+\text { Data: } \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ x_{1}, x_{2},...x_{n} \in \mathbb{R}^{2} \\
+\text { Latent Variables: }\ \left.z_{1}, z_{2},...z_{n} \in I \{1,2\right\}
+\end{array}
+\end{equation}
+
+
+Preparation: 
+
+To solve this, we use Estimation Maximization(EM) algorithm. Here, we work with joint likelihood of the data and its latent variable value. The marginal distribution in the joint likelihood would be the sum of the density functions of the two normal distribution. When we deal with sum of density functions, optimization is difficult. Thats where the latent variable make optimization easier.
+
+Joint likelihood of data and latent variable is expressed as: 
+
+\begin{equation}
+P_{\theta}(x, z)=P_{\theta}(z)P_{\theta}(x / z)
+\end{equation}
+
+\begin{equation}
+P_{1} N\left(x; \mu_{1}, \Sigma\right);z=1 \\
+\end{equation}
+
+\begin{equation}
+P_{2} N\left(x; \mu_{2}, \Sigma\right);z=2 \\
+\end{equation}
+
+Now, we don't want to have our density functions to have "IF" commands as this will complicate optimization. As such, we are instead writing our density function as follows: 
+
+\begin{equation}
+P_{\theta}(x, z)=\left[P_{1} N\left(x{;} \mu_{1}, \sum\right)\right]^{\left. I{\{} z=1\right\}}\ *\left[P_{2} N\left(x{;} \mu_{2}, \sum\right)\right]^{\left. I{\{} z=2\right\}}
+\end{equation}
+
+As we take log for optimization, the above expression helps with computation. Log likelihood for one observation is given as: 
+
+\begin{equation}
+\left.\log P_{\theta}(x, z)=I\{z=1\right\}\ *\left\{\log P_{1} -\frac{1}{2} \log |\Sigma|-\frac{1}{2}(x-\mu_{1})^{t}\ * \ \Sigma^{-1}*(x-\mu_{1} )\right\} \ \ + I\{{z=2}\}\ *\ \left\{\log P_{2} -\frac{1}{2} \log |\Sigma|-\frac{1}{2}(x-\mu_{2})^{t}\ * \ \Sigma^{-1}*(x-\mu_{2} )\right\} 
+\end{equation}
+
+The common factor involving \pi becomes a constant after taking log on the joint likelihood. The constant is dropped as it does not contribute to optimization.
+
+
+EM - Step1:
+
+Here, we take the log of the joint likelihood of data and its associated latent values. The observations and their latent variable are independent pairs from each other. Their likelihood is going to be a product as expressed below: 
+
+\begin{equation}
+\begin{aligned}
+& \log \prod_{i=1}^{n} P\left(x_{i}, z_{i}\right) \\
+=& \sum_{i=1}^{n} \log p\left(x_{i}, z_{i}\right) \\
+=& \sum_{i=1}^{n}\ [\ I\{{z=1}\}\ *\ \left\{\log P_{1} -\frac{1}{2} \log |\Sigma|-\frac{1}{2}(x_i-\mu_{1})^{t}\ * \ \Sigma^{-1}*(x_i-\mu_{1} )\right\} \ \ + I\{{z=2}\}\ *\ \left\{\log P_{2} -\frac{1}{2} \log |\Sigma|-\frac{1}{2}(x_i-\mu_{2})^{t}\ * \ \Sigma^{-1}*(x_i-\mu_{2} )\right\}\ ]
+\end{aligned}
+\end{equation}
+
+So, this is our joint likelihood which is complete. We cannot maximize this as we do not observe \ Z but only the \ X. We pick the parameters to maximize the expected version of this joint likelihood in the next step. 
+
+EM - Step2 OR E-Step:
+
+Here, we take expectation of the above expression which converts the Identifiers into probabilities.In E Step we find out the distribution of latent variables \ Z given the data \ X for an initial set of parameters \theta. The latent variables are all independent and follow a multinomial distribution of \ P1 and \ P2
+
+\begin{equation}
+z_{1}... z_{n} \mid x_1...x_n, \theta^{(0)}  \ = Z_{i} \mid X_{i},\theta^{(0)} \sim Multinomial\left(P_{i1}, P_{i2}\right)
+\end{equation}
+
+Using Bayes rule, this is expressed as:
+
+\begin{equation}
+\left.\mathbb{P}_{\theta^{0}} (z_{i}=1 \mid x_{i}\right)=\frac{\mathbb{P}\left(z_{i}=1, x_{i}\right)}{\mathbb{P}\left(x_{i}\right)}=\frac{\mathbb{P}\left(z_{i}=1, x_{i}\right)}{\mathbb{P}\left(z_{i}=1, x_{i}\right)+\mathbb{P}\left(z_{i}=2, x_{i}\right)} = \frac{\mathbb{P}\left(z_{i}=1) * \mathbb{P} ( x_{i}\mid z_{i}=1\right)}{\mathbb{P}\left(z_{i}=1) * \mathbb{P} ( x_{i}\mid z_{i}=1\right) + \mathbb{P}\left(z_{i}=2) * \mathbb{P} ( x_{i}\mid z_{i}=2\right)} = \frac{P_{1}^{(0)} *N\left(x_{i};\mu_{1}^{(0)}, \sum^{(0)} \right)} {P_{1}^{(0)} *N\left(x_{i};\mu_{1}^{(0)}, \sum^{(0)} \right) + P_{2}^{(0)} *N\left(x_{i};\mu_{2}^{(0)}, \sum^{(0)} \right)}
+\end{equation}
+
+In E step we calculate the estimated probabilities for the given parameters as below:   
+
+\begin{equation}
+P_{i1} =\frac{P_{1}^{(0)} *N\left(x_{i};\mu_{1}^{(0)}, \sum^{(0)} \right)} {P_{1}^{(0)} *N\left(x_{i};\mu_{1}^{(0)}, \sum^{(0)} \right) + P_{2}^{(0)} *N\left(x_{i};\mu_{2}^{(0)}, \sum^{(0)} \right)}
+\end{equation}
+
+\begin{equation}
+P_{i2} = \frac{P_{2}^{(0)} *N\left(x_{i};\mu_{2}^{(0)}, \sum^{(0)} \right)} {P_{1}^{(0)} *N\left(x_{i};\mu_{1}^{(0)}, \sum^{(0)} \right) + P_{2}^{(0)} *N\left(x_{i};\mu_{2}^{(0)}, \sum^{(0)} \right)}
+\end{equation}
+
+
+
+
+
+EM - Step3 OR M-Step:
+
+
+At the very first step we calculated the joint likelihood. We could not directly optimize it as the latent values were not observed. In E Step, we calculate the expectation probabilities and in M-Step we average out these expected values of the indicators. The average of the expected values of indicator becomes their probabilities. These probabilities are used to calculate the joint likelihood as follows:
+
+\begin{equation}
+\begin{aligned}
+& \log \prod_{i=1}^{n} P\left(x_{i}, z_{i}\right) \\
+=& \sum_{i=1}^{n} \log p\left(x_{i}, z_{i}\right) \\
+=& \sum_{i=1}^{n}\ \left[\ I\{{z=1}\}\ *\ \left\{\log P_{1} -\frac{1}{2} \log |\Sigma|-\frac{1}{2}(x_i-\mu_{1})^{t}\ * \ \Sigma^{-1}*(x_i-\mu_{1} )\right\} \ \ + I\{{z=2}\}\ *\ \left\{\log P_{2} -\frac{1}{2} \log |\Sigma|-\frac{1}{2}(x_i-\mu_{2})^{t}\ * \ \Sigma^{-1}*(x_i-\mu_{2} )\right\}\ \right] \\
+=& \sum_{i=1}^{n}\ \left[\ P_{i1}\ *\ \left\{\log P_{1} -\frac{1}{2} \log |\Sigma|-\frac{1}{2}(x_i-\mu_{1})^{t}\ * \ \Sigma^{-1}*(x_i-\mu_{1} )\right\} \ \ + \ P_{i2} *\ \left\{\log P_{2} -\frac{1}{2} \log |\Sigma|-\frac{1}{2}(x_i-\mu_{2})^{t}\ * \ \Sigma^{-1}*(x_i-\mu_{2} )\right\}\ \right]
+\end{aligned}
+\end{equation}
+ 
+After the M-Step, we have the objective function with new updated parameters as below. 
+
+
+\begin{equation}
+=J\left(P_{1}, P_{2}, \mu_{1}, \mu_{2}, \Sigma\right)
+\end{equation}
+
+These are used in the next iteration of E and M Steps. The iteration is repeated until convergence. In this assignment we stop after 10 iterations.
+
+The optimal estimate for the parameters are calculated as:
+
+\begin{equation}
+\ P1 = \frac{\sum \ P_{i1}}{n};
+\ P2 = \frac{\sum \ P_{i2}}{n};
+\mu_{1}=\frac{\sum_{i=1}^{n}\left(P_{i 1} * x_{i}\right)}{\sum_{i=1}^{n} P_{i 1}};
+\mu_{2}=\frac{\sum_{i=1}^{n}\left(P_{i 2} * x_{i}\right)}{\sum_{i=1}^{n} P_{i 2}}
+\Sigma = \frac{\sum_{i=1}^{n} P_{i 1}\left(x_{i}-\mu_{1}\right)\left(x_{i}-\mu_{1}\right)^{t}+\sum_{i=1}^{n} P_{i 2}\left(x_{i}-\mu_{2}\right)\left(x_{i}-\mu_{2}\right)}{n}
+\end{equation}
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+mypackages = c("mclust")   # required packages
+tmp = setdiff(mypackages, rownames(installed.packages()))  # packages need to be installed
+if (length(tmp) > 0) install.packages(tmp)
+lapply(mypackages, require, character.only = TRUE)
+```
+
+# Prepare your function
+
+## You should prepare a function to perform the E-step, a function to perform the M-step, and then iteratively call these two functions in myEM.
+
+```{r}
+Estep <- function(data, G, para){
+  # Your Code
+  # Return the n-by-G probability matrix
+  
+  Sinv = solve(para$Sigma)
+  nG = matrix(0,nrow = nrow(data),2)
+  
+  t1 = apply(t(apply(data,1, function(x) c(x[1] - para$mean[1,1], x[2] - para$mean[2,1]))), 1, function(x) 0.5*t(as.matrix(x))%*%Sinv%*%x)
+  
+  t2 = apply(t(apply(data,1, function(x) c(x[1] - para$mean[1,2], x[2] - para$mean[2,2]))), 1, function(x) -0.5*t(as.matrix(x))%*%Sinv%*%x)
+  
+  P_i1 = 1 + exp(log(para$prob[2]/para$prob[1]) + t1 + t2)
+  P_i1 = 1/P_i1
+  
+  nG = cbind(P1 = P_i1, P2 = 1 - P_i1)
+  return(nG)
+  
+}
+
+Mstep <- function(data, G, post.prob){ 
+  # Your Code
+  # Return the updated parameters
+  
+  new_p = colMeans(post.prob)
+  data = as.matrix(data)
+  
+  mu1_new = colSums(post.prob[,1]*data)/sum(post.prob[,1])
+  mu2_new = colSums(post.prob[,2]*data)/sum(post.prob[,2])
+  
+  new_mean = cbind(mu1_new,mu2_new)
+
+  new_sigma = t(post.prob[,1]* t(t(data) - new_mean[,1]))%*%t(t(data) - new_mean[,1])*1/sum(post.prob) + t(post.prob[,2]* t(t(data) - new_mean[,2]))%*%t(t(data) - new_mean[,2])*1/sum(post.prob)
+  
+  new_para = list(prob = new_p, mean = new_mean,Sigma = new_sigma)
+  
+  new_para
+  
+}
+
+myEM <- function(data, itmax, G, para){
+  # itmax: num of iterations
+  # G:     num of components
+  # para:  list of parameters (prob, mean, Sigma)
+  for(t in 1:itmax){
+    post.prob <- Estep(data, G, para)
+    para <- Mstep(data, G, post.prob)
+  }
+  return(para)
+}
+```
+
+
+# Test your function
+
+## Test your function with data faithful from mclust.
+
+# Load data
+
+```{r}
+library(mclust)
+dim(faithful)
+```
+
+```{r}
+head(faithful)
+```
+
+```{r}
+n <- nrow(faithful)
+```
+
+```{r}
+set.seed(4726) 
+Z <- matrix(0, n, 2) 
+Z[sample(1:n, 120), 1] <- 1 
+Z[, 2] <- 1 - Z[, 1]
+ini0 <- mstep(modelName="EEE", faithful , Z)$parameters
+```
+
+## Here are the initial values we use for (prob, mean, Sigma).
+
+```{r}
+para0 <- list(prob = ini0$pro, 
+              mean = ini0$mean, 
+              Sigma = ini0$variance$Sigma)
+para0
+```
+
+# Compare results
+
+## Compare the estimated parameters returned by myEM and the ones returned by the EM algorithm in mclust after 10 iterations.
+
+## Output from myEM
+
+```{r}
+myEM(data=faithful, itmax=10, G=2, para=para0)
+```
+
+## Output from mclust
+
+```{r}
+Rout <- em(modelName = "EEE", data = faithful,
+           control = emControl(eps=0, tol=0, itmax = 10), 
+           parameters = ini0)$parameters
+list(Rout$pro, Rout$mean, Rout$variance$Sigma)
+```
+
