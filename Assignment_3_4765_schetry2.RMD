@@ -1,0 +1,177 @@
+---
+title: "Assignment_3_4765_schetry2"
+author: "Saurav Prem Kaushik Chetry"
+date: "9/17/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+mypackages = c("splines", "glmnet")   # required packages
+tmp = setdiff(mypackages, rownames(installed.packages()))  # packages need to be installed
+if (length(tmp) > 0) install.packages(tmp)
+lapply(mypackages, require, character.only = TRUE)
+```
+
+## Prepare your function  
+
+### Write your own function to use LOO-CV and GCV to select the optimal span for loess. If you do not know where to start, you can follow the structure below to prepare your functions.
+
+```{r}
+lo.lev <- function(x1, sp){
+  # x1: feature vector of length n
+  # sp: a value for "span"
+  
+  n = length(x1);
+  lev = rep(0, n)
+  
+  ##############################################
+  # YOUR CODE: Compute the diagonal entries of the 
+  #            smoother matrix S and 
+  #            store it in a vector "lev"
+  # Tip: check how we compute the smoother matrix
+  #      for smoothing spline models
+  ##############################################
+
+  S = matrix(0, n, n)
+  
+  for (i in 1:n) {
+    y = rep(0, n)
+    y[i] = 1
+    S[, i] = loess(y ~ x1, span = sp, control = loess.control(surface = "direct"))$fitted
+  }
+  lev = diag(S)
+  
+  return(lev)
+}
+
+#custom function for loocv
+cv.lo = function(x1,y1,y1_hat,sp){
+  
+  diagS = lo.lev(x1, sp)
+  n = length(y1)
+  cv = rep(0,n)
+  
+  for(i in 1:n){
+    
+    cv[i] = ((y1[i] - y1_hat[i])/(1 - diagS[i]))^2
+    
+  }
+  return(mean(cv))
+}
+
+# custom function for gcv
+gcv.lo = function(x1,y1,y1_hat,sp){
+  diagS = lo.lev(x1, sp)
+  n = length(y1)
+  gcv = rep(0,n)
+  
+  for(i in 1:n){
+    
+    gcv[i] = ((y1[i] - y1_hat[i])/(1 - mean(diagS[i])))^2
+    
+  }
+  return(mean(gcv))
+  
+}
+
+onestep_CV <- function(x1, y1, sp){
+  
+  ##############################################
+  #  YOUR CODE: 
+  #  1) Fit a loess model y1 ~ x1 with span = sp, and extract 
+  #     the corresponding residual vector
+  #  2) Call lo.lev to obtain the diagonal entries of S
+  #  3) Compute LOO-CV and GCV using formula from lecture notes
+  #    [lec_W5_NonlinearRegression.pdf] page 33. 
+  ##############################################
+  
+  mod.lo = loess(y1 ~ x1, span = sp, control = loess.control(surface = "direct"))
+  cv = cv.lo(x1,y1,mod.lo$fitted,sp)
+  gcv = gcv.lo(x1,y1,mod.lo$fitted,sp)
+  
+  return(list(cv = cv, gcv = gcv))
+}
+
+myCV <- function(x1, y1, span){
+  # x1: feature vector of length n
+  # y1: response vector of length n
+  # span: a sequence of values for "span"
+  
+  m = length(span)
+  cv = rep(0, m)
+  gcv = rep(0, m)
+  
+  for(i in 1:m){
+    val = onestep_CV(x1, y1, span[i])
+    cv[i] = val$cv
+    gcv[i] = val$gcv
+  }
+  return(list(cv = cv, gcv = gcv))
+}
+```
+
+## Test your function  
+
+### Test your function with data "Coding3_Data.csv."
+
+```{r}
+mydata = read.csv(file = "Coding3_Data.csv")
+#head(mydata)
+dim(mydata)
+```
+
+```{r}
+plot(mydata$x, mydata$y, xlab="", ylab="")
+```
+
+### Create a grid of values for span: 15 values that are equally spaced between 0.20 and 0.90. Call your function myCV to compute the corresponding LOO-CV and GCV.
+
+```{r}
+span1 = seq(from = 0.2, by = 0.05, length = 15 )
+cv.out = myCV(mydata$x, mydata$y, span1)
+```
+
+## Print out your results  
+
+### Print your results on LOO-CV and GCV. Both achieve their minimal at 0.5.
+
+```{r}
+myout = data.frame(CV = cv.out$cv, 
+                   GCV = cv.out$gcv, 
+                   span = span1)
+myout
+```
+
+```{r}
+myout$span[myout$GCV == min(myout$GCV)]
+```
+
+```{r}
+myout$span[myout$CV == min(myout$CV)]
+```
+
+
+## Plot the fitted curve   
+
+### Plot the data (red circles), the true curve (gray) and the fitted curve (blue dashed line) using the optimal span.
+
+```{r}
+spangcv.min = 0.5
+plot(mydata$x, mydata$y, xlab="x", ylab="y", col="red");
+fx = 1:50/50;
+fy = sin(12*(fx+0.2))/(fx+0.2)
+lines(fx, fy, col=8, lwd=2)
+
+f = loess(y ~ x, mydata, span = spangcv.min)
+lines(fx, predict(f, data.frame(x = fx), surface = "direct"), 
+      lty=2, lwd=2, col="blue")
+
+legend("topright", legend = c("data", "true", "fitted"), lty = c(NA,1,2), pch = c(1,NA,NA), col = c("red", "gray", "blue"), cex = 0.7)
+```
+
+
+
